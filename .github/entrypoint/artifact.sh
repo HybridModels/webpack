@@ -73,6 +73,7 @@ set_target() {
     echo "  organization: [$(cat ${RUNNER_TEMP}/user_orgs)]" >> ${RUNNER_TEMP}/_config.yml
   fi
   return $(( $SPAN + $SPIN ))
+
 }
 
 jekyll_build() {
@@ -100,20 +101,6 @@ jekyll_build() {
   echo 'repo='${TARGET_REPOSITORY} >> ${GITHUB_OUTPUT}
   echo 'TARGET_REPOSITORY='${TARGET_REPOSITORY} >> ${GITHUB_ENV}
 
-  if [[ "${TARGET_REPOSITORY}" != *"eq19/"* ]]; then
-    NEXT_REPOSITORY=$(next_repo "${TARGET_REPOSITORY}")
-    gh variable set TARGET_REPOSITORY --repo $TARGET_REPOSITORY --body "$NEXT_REPOSITORY"
-
-    # Test cases
-    echo "Test Cases:"
-    echo "1. Chetabahana/maps → $(next_repo "Chetabahana/maps")"
-    echo "2. Chetabahana/grammar → $(next_repo "Chetabahana/grammar")"
-    echo "3. Chetabahana/track → $(next_repo "Chetabahana/track")"
-    echo "4. FeedMapping/FeedMapping.github.io → $(next_repo "FeedMapping/FeedMapping.github.io")"
-    echo "5. ${TARGET_REPOSITORY} → $(next_repo "${TARGET_REPOSITORY}")"
-    echo "6. ${NEXT_REPOSITORY} → $(next_repo "${NEXT_REPOSITORY}")"
-  fi
-
   sed -i "1s|^|title: eQuantum\n|" ${RUNNER_TEMP}/_config.yml
   sed -i "1s|^|span: ${FOLDER}\n|" ${RUNNER_TEMP}/_config.yml
   sed -i "1s|^|user: ${USER}\n|" ${RUNNER_TEMP}/_config.yml
@@ -124,6 +111,20 @@ jekyll_build() {
   echo -e "\n$hr\nCONFIG\n$hr"
   cat ${RUNNER_TEMP}/_config.yml
 
+  if [[ "${TARGET_REPOSITORY}" != *"eq19/"* ]]; then
+
+    echo -e "\nTest Module Structure:"
+    echo "1. Chetabahana/maps → $(next_repo "Chetabahana/maps")"
+    echo "2. Chetabahana/grammar → $(next_repo "Chetabahana/grammar")"
+    echo "3. Chetabahana/track → $(next_repo "Chetabahana/track")"
+    echo "4. FeedMapping/FeedMapping.github.io → $(next_repo "FeedMapping/FeedMapping.github.io")"
+    echo "5. ${TARGET_REPOSITORY} → $(next_repo "${TARGET_REPOSITORY}")"
+
+    NEXT_REPOSITORY=$(next_repo "${TARGET_REPOSITORY}")
+    gh variable set TARGET_REPOSITORY --repo $TARGET_REPOSITORY --body "$NEXT_REPOSITORY"
+
+  fi
+   
   echo -e "\n$hr\nSET TOKEN\n$hr"
   sync.sh ${REPO} ${TARGET_REPOSITORY} ${GH_TOKEN}
   
@@ -136,6 +137,7 @@ jekyll_build() {
 
 # Define the next repository function using jq
 next_repo() {
+
   local target_repo="$1"
   jq -r --arg target "$target_repo" '
     ($target | split("/")) as $parts |
@@ -145,34 +147,36 @@ next_repo() {
     (map(.login) | index($org)) as $org_index |
     if $org_index == null then
       "Organization not found: \($org)" | halt_error(1)
-    else .[$org_index] as $current_org |
+    else 
+      .[$org_index] as $current_org |
+      (.[($org_index + 1) % length].login) as $next_org |
 
-    if $repo == "\($org).github.io" then
-      # Special case: after github.io, go to first key1 of same org
-      "\($org)/\($current_org.key1[0])"
-    
-    else
-      ($current_org.key1 | index($repo)) as $key1_index |
-      if $key1_index != null then
-        if ($key1_index + 1) < ($current_org.key1 | length) then
-          "\($org)/\($current_org.key1[$key1_index + 1])"
-        else
-          "\($org)/\($current_org.key2[0])"
-        end
+      if $repo == "\($org).github.io" then
+        "\($org)/\($current_org.key1[0])"
       else
-        ($current_org.key2 | index($repo)) as $key2_index |
-        if $key2_index != null then
-          if ($key2_index + 1) < ($current_org.key2 | length) then
-            "\($org)/\($current_org.key2[$key2_index + 1])"
+        ($current_org.key1 | index($repo)) as $key1_index |
+        if $key1_index != null then
+          if ($key1_index + 1) < ($current_org.key1 | length) then
+            "\($org)/\($current_org.key1[$key1_index + 1])"
           else
-            # After last key2, go to same org's github.io
-            "\($org)/\($org).github.io"
+            "\($org)/\($current_org.key2[0])"
+          end
+        else
+          ($current_org.key2 | index($repo)) as $key2_index |
+          if $key2_index != null then
+            if ($key2_index + 1) < ($current_org.key2 | length) then
+              "\($org)/\($current_org.key2[$key2_index + 1])"
+            else
+              "\($next_org)/\($next_org).github.io"
+            end
+          else
+            "Repository not found: \($repo)" | halt_error(1)
           end
         end
       end
     end
-    end
   ' ${RUNNER_TEMP}/orgs.json
+
 }
 
 # Get structure on gist files
